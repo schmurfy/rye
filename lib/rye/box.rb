@@ -34,6 +34,9 @@ module Rye
     def safe; @rye_safe; end
     def user; (@rye_opts || {})[:user]; end
     
+    # gateway
+    def gateway; @getaway; end
+    
     # Returns the current value of the stash +@rye_stash+
     def stash; @rye_stash; end
     def quiet; @rye_quiet; end
@@ -88,6 +91,7 @@ module Rye
     def initialize(host='localhost', opts={})
       @rye_exception_hook = {}
       @rye_host = host
+      @gateway = opts.delete(:gateway)
       
       # These opts are use by Rye::Box and also passed to Net::SSH
       @rye_opts = {
@@ -591,13 +595,28 @@ module Rye
     def connect(reconnect=true)
       raise Rye::NoHost unless @rye_host
       return if @rye_ssh && !reconnect
+      
       disconnect if @rye_ssh 
       debug "Opening connection to #{@rye_host} as #{@rye_opts[:user]}"
       highline = HighLine.new # Used for password prompt
       retried = 0
       @rye_opts[:keys].compact!  # A quick fix in Windows. TODO: Why is there a nil?
+      
       begin
-        @rye_ssh = Net::SSH.start(@rye_host, @rye_opts[:user], @rye_opts || {}) 
+
+        if @gateway
+          gw_ip = @gateway.instance_variable_get('@rye_host')
+          gw_user = @gateway.user
+          
+          puts "Connecting via gateway #{gw_ip}"
+          
+          gw = Net::SSH::Gateway.new(gw_ip, gw_user)
+          
+          @rye_ssh = gw.ssh(@rye_host, @rye_opts[:user], @rye_opts || {})
+        else
+          @rye_ssh = Net::SSH.start(@rye_host, @rye_opts[:user], @rye_opts || {}) 
+        end
+        
       rescue Net::SSH::HostKeyMismatch => ex
         STDERR.puts ex.message
         print "\a" if @rye_info # Ring the bell
