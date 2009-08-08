@@ -137,7 +137,6 @@ module Rye
       # From: capistrano/lib/capistrano/cli.rb
       STDOUT.sync = true # so that Net::SSH prompts show up
       
-      debug "ssh-agent info: #{Rye.sshagent_info.inspect}"
       debug @rye_opts.inspect
 
     end

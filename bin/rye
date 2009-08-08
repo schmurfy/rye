@@ -24,13 +24,13 @@ global :V, :version, "Display version number" do
   exit 0
 end
 
-before do |obj|
-  # Load private keys if specified
-  if obj.global.path
-    keys = Rye.find_private_keys(obj.global.path) 
-    Rye.add_keys(keys)
-  end
-end
+# before do |obj|
+#   # Load private keys if specified
+#   if obj.global.path
+#     keys = Rye.find_private_keys(obj.global.path) 
+#     Rye.add_keys(keys)
+#   end
+# end
 
 after do
 
