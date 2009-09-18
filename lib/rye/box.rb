@@ -929,7 +929,7 @@ module Rye
         
         # Expand fileglobs (e.g. path/*.rb becomes [path/1.rb, path/2.rb]).
         # This should happen after checking files.size to determine the target
-        files = files.collect { |file| Dir.glob file }.flatten unless @rye_safe
+        # files = files.collect { |file| Dir.glob file }.flatten unless @rye_safe
       end
               
       # Fail early. We check whether the StringIO object is available to read
