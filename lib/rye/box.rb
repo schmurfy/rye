@@ -660,8 +660,10 @@ module Rye
       rescue Net::SSH::AuthenticationFailed => ex
         print "\a" if retried == 0 && @rye_info # Ring the bell once
         retried += 1
-        if STDIN.tty? && retried <= 3
-          STDERR.puts "Passwordless login failed for #{@rye_user}"
+
+        if @rye_opts[:interactive] && STDIN.tty? && retried <= 3
+          STDERR.puts "Passwordless login failed for #{@rye_opts[:user]}"
+
           @rye_opts[:password] = highline.ask("Password: ") { |q| q.echo = '' }
           @rye_opts[:auth_methods] ||= []
           @rye_opts[:auth_methods] << 'password'
@@ -697,7 +699,7 @@ module Rye
     end
     
     
-  private
+  # private
       
     def debug(msg="unknown debug msg"); @rye_debug.puts msg if @rye_debug; end
     def error(msg="unknown error msg"); @rye_error.puts msg if @rye_error; end
