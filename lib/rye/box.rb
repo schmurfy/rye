@@ -952,18 +952,16 @@ module Rye
         self.mkdir(:p, target) unless self.file_exists?(target)
       end
       
-      Net::SCP.start(@rye_host, @rye_opts[:user], @rye_opts || {}) do |scp|
-        transfers = []
-        files.each do |file|
-          debug file.to_s
-          transfers << scp.send(direction, file, target)  do |ch, n, s, t|
-            pinfo "#{n}: #{s}/#{t}b\r"  # update line: "file: sent/total"
-            @rye_info.flush if @rye_info        # make sure every line is printed
-          end
+      transfers = []
+      files.each do |file|
+        debug file.to_s
+        transfers << @rye_ssh.scp.send(direction, file, target)  do |ch, n, s, t|
+          pinfo "#{n}: #{s}/#{t}b\r"  # update line: "file: sent/total"
+          @rye_info.flush if @rye_info        # make sure every line is printed
         end
-        transfers.each { |t| t.wait }   # Run file transfers in parallel
-        info $/
       end
+      transfers.each { |t| t.wait }   # Run file transfers in parallel
+      info $/
       
       target.is_a?(StringIO) ? target : nil
     end
