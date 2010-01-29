@@ -47,7 +47,11 @@ module Rye;
     def tar(*args); cmd('tar', args); end
     
     #def kill(*args); cmd('kill', args); end
-    def sudo(*args); cmd('sudo', args); end
+    def sudo(str, user = nil)
+      user_str = (user != nil) ? "-u #{user}" : ""
+      cmd('sudo', "#{user_str} sh -c '#{str}'")
+    end
+    
     def grep(*args); cmd('grep', args); end
     def date(*args); cmd('date', args); end
     def ruby(*args); cmd('ruby', args); end
