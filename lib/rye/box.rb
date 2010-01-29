@@ -32,7 +32,7 @@ module Rye
     def host; @rye_host; end
     def opts; @rye_opts; end
     def safe; @rye_safe; end
-    def user; (@rye_opts || {})[:user]; end
+    def user; @rye_user; end
     
     # gateway
     def gateway; @getaway; end
@@ -65,19 +65,22 @@ module Rye
     def info; @rye_info; end
     def debug; @rye_debug; end
     def error; @rye_error; end
-
+    
+    def ostype=(val); @rye_ostype = val; end 
+    def impltype=(val); @rye_impltype = val; end 
     def pre_command_hook=(val); @rye_pre_command_hook = val; end
     def post_command_hook=(val); @rye_post_command_hook = val; end
     # A Hash. The keys are exception classes, the values are Procs to execute
     def exception_hook=(val); @rye_exception_hook = val; end
 
-    # * +host+ The hostname to connect to. The default is localhost.
+    # * +host+ The hostname to connect to. Default: localhost.
+    # * +user+ The username to connect as. Default: SSH config file or current shell user.
     # * +opts+ a hash of optional arguments.
     #
     # The +opts+ hash excepts the following keys:
     #
-    # * :user => the username to connect as. Default: the current user. 
     # * :safe => should Rye be safe? Default: true
+    # * :port => remote server ssh port. Default: SSH config file or 22
     # * :keys => one or more private key file paths (passwordless login)
     # * :info => an IO object to print Rye::Box command info to. Default: nil
     # * :debug => an IO object to print Rye::Box debugging info to. Default: nil
@@ -89,15 +92,21 @@ module Rye
     # Net::SSH.start that is not already mentioned above.
     #
     def initialize(host='localhost', opts={})
+      ssh_opts = ssh_config_options(host)
       @rye_exception_hook = {}
       @rye_host = host
       @gateway = opts.delete(:gateway)
       
+      if opts[:user]
+        @rye_user = opts[:user]
+      else
+        @rye_user = ssh_opts[:user] || Rye.sysinfo.user
+      end
+
       # These opts are use by Rye::Box and also passed to Net::SSH
       @rye_opts = {
-        :user => Rye.sysinfo.user, 
         :safe => true,
-        :port => 22,
+        :port => ssh_opts[:port],
         :keys => [],
         :info => nil,
         :debug => nil,
@@ -115,6 +124,7 @@ module Rye
       @rye_safe, @rye_debug = @rye_opts.delete(:safe), @rye_opts.delete(:debug)
       @rye_info, @rye_error = @rye_opts.delete(:info), @rye_opts.delete(:error)
       @rye_getenv = {} if @rye_opts.delete(:getenv) # Enable getenv with a hash
+      @rye_ostype, @rye_impltype = @rye_opts.delete(:ostype), @rye_opts.delete(:impltype)
       @rye_quiet = @rye_opts.delete(:quiet)
       
       # Just in case someone sends a true value rather than IO object
@@ -141,6 +151,10 @@ module Rye
 
     end
     
+    # Parse SSH config files for use with Net::SSH
+    def ssh_config_options(host)
+      return Net::SSH::Config.for(host)
+    end
     
     # Change the current working directory (sort of). 
     #
@@ -172,7 +186,7 @@ module Rye
           @rye_current_working_directory = fpath
         end
       end
-      info "CWD: #{@rye_current_working_directory}"
+      debug "CWD: #{@rye_current_working_directory}"
       self
     end
     # Like [] except it returns an empty Rye::Rap object to mimick
@@ -201,7 +215,7 @@ module Rye
     def switch_user(newuser)
       return if newuser.to_s == self.user.to_s
       @rye_opts ||= {}
-      @rye_opts[:user] = newuser
+      @rye_user = newuser
       disconnect
     end
 
@@ -215,7 +229,7 @@ module Rye
     def interactive_ssh(run=true)
       debug "interactive_ssh with keys: #{Rye.keys.inspect}"
       run = false unless STDIN.tty?      
-      cmd = Rye.prepare_command("ssh", "#{@rye_opts[:user]}@#{@rye_host}")
+      cmd = Rye.prepare_command("ssh", "#{@rye_user}@#{@rye_host}")
       return cmd unless run
       system(cmd)
     end
@@ -224,7 +238,7 @@ module Rye
     # * +additional_keys+ is a list of file paths to private keys
     # Returns the instance of Box
     def add_keys(*additional_keys)
-      if Rye.sysinfo.os == :win32
+      if Rye.sysinfo.os == :windows
         @rye_opts[:keys] ||= []
         @rye_opts[:keys] += additional_keys.flatten
         return @rye_opts[:keys]
@@ -250,6 +264,10 @@ module Rye
       os ||= 'unknown'
       os &&= os.downcase
       @rye_ostype = os
+    end
+    
+    def impltype
+      @rye_impltype
     end
     
     # Returns the hash containing the parsed output of "env" on the 
@@ -331,21 +349,24 @@ module Rye
       # /etc/default/useradd, HOME=/home OR useradd -D
       # /etc/adduser.config, DHOME=/home OR ??
       user_defaults = {}
-      raw = self.quietly { useradd(:D) } rescue ["HOME=/home"]
       ostmp = self.ostype
-      raw.each do |nv|
-
-        if ostmp == "sunos"
-          #nv.scan(/([\w_-]+?)=(.+?)\s/).each do |n, v|
-          #  n = 'HOME' if n == 'basedir'
-          #  user_defaults[n.upcase] = v.strip
-          #end
-          # In Solaris, useradd -D says the default home path is /home
-          # but that directory is not writable. See: http://bit.ly/IJDD0
-          user_defaults['HOME'] = '/export/home'
-        elsif ostmp == "darwin"
-          user_defaults['HOME'] = '/Users'
-        else
+      ostmp &&= ostype.to_s
+      
+      if ostmp == "sunos"
+        #nv.scan(/([\w_-]+?)=(.+?)\s/).each do |n, v|
+        #  n = 'HOME' if n == 'basedir'
+        #  user_defaults[n.upcase] = v.strip
+        #end
+        # In Solaris, useradd -D says the default home path is /home
+        # but that directory is not writable. See: http://bit.ly/IJDD0
+        user_defaults['HOME'] = '/export/home'
+      elsif ostmp == "darwin"
+        user_defaults['HOME'] = '/Users'
+      elsif ostmp == "windows"
+        user_defaults['HOME'] = 'C:/Documents and Settings'
+      else
+        raw = self.quietly { useradd(:D) } rescue ["HOME=/home"]
+        raw.each do |nv|
           n, v = nv.scan(/\A([\w_-]+?)=(.+)\z/).flatten
           user_defaults[n] = v
         end
@@ -418,19 +439,30 @@ module Rye
       rap.add_exit_code(0)
       rap
     end
-    
+    require 'fileutils'
     # Authorize the current user to login to the local machine via
     # SSH without a password. This is the same functionality as
     # authorize_keys_remote except run with local shell commands. 
     def authorize_keys_local
       added_keys = []
+      ssh_dir = File.join(Rye.sysinfo.home, '.ssh')
       Rye.keys.each do |path|
         debug "# Public key for #{path}"
         k = Rye::Key.from_file(path).public_key.to_ssh2
-        Rye.shell(:mkdir, :p, :m, '700', '$HOME/.ssh') # Silently create dir if it doesn't exist
-        Rye.shell(:echo, "'#{k}' >> $HOME/.ssh/authorized_keys")
-        Rye.shell(:echo, "'#{k}' >> $HOME/.ssh/authorized_keys2")
-        Rye.shell(:chmod, '-R', '0600', '$HOME/.ssh/authorized_keys*')
+        FileUtils.mkdir ssh_dir unless File.exists? ssh_dir
+        
+        authkeys_file = File.join(ssh_dir, 'authorized_keys')
+        
+        debug "Writing to #{authkeys_file}"
+        File.open(authkeys_file, 'a')       {|f| f.write("#{$/}#{k}") }
+        File.open("#{authkeys_file}2", 'a') {|f| f.write("#{$/}#{k}") }
+        
+        unless Rye.sysinfo.os == :windows
+          Rye.shell(:chmod, '700', ssh_dir)
+          Rye.shell(:chmod, '0600', authkeys_file)
+          Rye.shell(:chmod, '0600', "#{authkeys_file}2")
+        end
+        
         added_keys << path
       end
       added_keys
@@ -596,7 +628,7 @@ module Rye
       return if @rye_ssh && !reconnect
       
       disconnect if @rye_ssh 
-      debug "Opening connection to #{@rye_host} as #{@rye_opts[:user]}"
+      debug "Opening connection to #{@rye_host} as #{@rye_user}"
       highline = HighLine.new # Used for password prompt
       retried = 0
       @rye_opts[:keys].compact!  # A quick fix in Windows. TODO: Why is there a nil?
@@ -629,7 +661,7 @@ module Rye
         print "\a" if retried == 0 && @rye_info # Ring the bell once
         retried += 1
         if STDIN.tty? && retried <= 3
-          STDERR.puts "Passwordless login failed for #{@rye_opts[:user]}"
+          STDERR.puts "Passwordless login failed for #{@rye_user}"
           @rye_opts[:password] = highline.ask("Password: ") { |q| q.echo = '' }
           @rye_opts[:auth_methods] ||= []
           @rye_opts[:auth_methods] << 'password'
@@ -653,7 +685,7 @@ module Rye
     def disconnect
       return unless @rye_ssh && !@rye_ssh.closed?
       begin
-        Timeout::timeout(3) do
+        Timeout::timeout(10) do
           @rye_ssh.loop(0.3) { @rye_ssh.busy?; }
         end
       rescue SystemCallError, Timeout::Error => ex
@@ -738,7 +770,7 @@ module Rye
       ## raise Rye::CommandNotFound unless self.can?(cmd)
       
       begin
-        info "COMMAND: #{cmd_internal}"
+        debug "COMMAND: #{cmd_internal}"
 
         if !@rye_quiet && @rye_pre_command_hook.is_a?(Proc)
           @rye_pre_command_hook.call(cmd_clean, user, host, nickname) 
@@ -787,7 +819,7 @@ module Rye
       
       rap
     end
-    alias :cmd :run_command
+    alias :__allow :run_command
     
     # Takes a list of arguments appropriate for run_command or
     # preview_command and returns: [cmd, args]. 
@@ -820,11 +852,11 @@ module Rye
     #
     def net_ssh_exec!(command)
 
-      block ||= Proc.new do |channel, type, data|
+      block ||= Proc.new do |channel, type, data, tt|
         
         channel[:stdout] ||= ""
         channel[:stderr] ||= ""
-        channel[:stdout] << data if type == :stdout
+        
         
         if type == :stderr
           # NOTE: Use sudo to test this since it prompts for a passwords. 
@@ -842,7 +874,15 @@ module Rye
           # return the following error and appear to hang. We
           # catch it and raise the appropriate exception.
           raise Rye::NoPty if data =~ /Pseudo-terminal will not/
-          
+        elsif type == :stdout
+          if data =~ /Select gem to uninstall/i
+            puts data
+            ret = Annoy.get_user_input('')
+            raise "No input given" if ret.nil?
+            channel.send_data "#{ret}\n"
+          else
+            channel[:stdout] << data
+          end
         end
         
       end
@@ -883,6 +923,7 @@ module Rye
     
     
     # * +direction+ is one of :upload, :download
+    # * +recursive+ should be true for directories and false for files. 
     # * +files+ is an Array of file paths, the content is direction specific.
     # For downloads, +files+ is a list of files to download. The last element
     # must be the local directory to download to. If downloading a single file
@@ -896,14 +937,14 @@ module Rye
     # parameters. An exception is raised and no files are transferred. 
     # Uploads always return nil. Downloads return nil or a StringIO object if
     # one is specified for the target. 
-    def net_scp_transfer!(direction, *files)
-      direction ||= ''
+    def net_scp_transfer!(direction, recursive, *files)
+      
       unless [:upload, :download].member?(direction.to_sym)
         raise "Must be one of: upload, download" 
       end
       
       if @rye_current_working_directory
-        info "CWD (#{@rye_current_working_directory})"
+        debug "CWD (#{@rye_current_working_directory})"
       end
       
       files = [files].flatten.compact || []
@@ -929,7 +970,10 @@ module Rye
         
         # Expand fileglobs (e.g. path/*.rb becomes [path/1.rb, path/2.rb]).
         # This should happen after checking files.size to determine the target
-        files = files.collect { |file| Dir.glob file }.flatten unless @rye_safe
+        unless @rye_safe
+          files.collect! { |file| Dir.glob File.expand_path(file) }
+          files.flatten! 
+        end
       end
               
       # Fail early. We check whether the StringIO object is available to read
@@ -942,10 +986,10 @@ module Rye
         end
       end
       
-      info "#{direction.to_s.upcase} TO: #{target}"
+      info "#{direction.to_s} to: #{target}"
       debug "FILES: " << files.join(', ')
       
-      # Make sure the remote directory exists. We can do this only when
+      # Make sure the target directory exists. We can do this only when
       # there's more than one file because "target" could be a file name
       if files.size > 1 && !target.is_a?(StringIO)
         debug "CREATING TARGET DIRECTORY: #{target}"
@@ -953,13 +997,23 @@ module Rye
       end
       
       transfers = []
+      prev = ""
       files.each do |file|
         debug file.to_s
-        transfers << @rye_ssh.scp.send(direction, file, target)  do |ch, n, s, t|
-          pinfo "#{n}: #{s}/#{t}b\r"  # update line: "file: sent/total"
+        prev = ""
+        transfers << @rye_ssh.send(direction, file, target, :recursive => recursive)  do |ch, n, s, t|
+          line = "%-50s %6d/%-6d bytes" % [n, s, t]
+          spaces = (prev.size > line.size) ? ' '*(prev.size - line.size) : ''
+          pinfo "%s %s \r" % [line, spaces] # update line: "file: sent/total"
           @rye_info.flush if @rye_info        # make sure every line is printed
+          prev = line
         end
       end
+      transfers.each { |t| t.wait }   # Run file transfers in parallel
+      pinfo (' '*prev.size) << "\r"
+      info $/
+
+
       transfers.each { |t| t.wait }   # Run file transfers in parallel
       info $/
       

@@ -1,9 +1,40 @@
 RYE, CHANGES
 
-TODO
 
-* Re-implement Rye::Rap as an Observable StringIO object for dynamic printing of output. 
-* Fingerprints: ssh-keygen -l -f id_rsa_repos.pub
+#### 0.8.12 (2010-01-16) #############################
+
+* FIXED: Removed dependency on ssh-agent. Also fixes starting
+  many instances of said executable. 
+* FIXED: file_append was overwriting when supplied a String (!)
+* ADDED: Use SSH config file by default [Justin Case]
+
+
+#### 0.8.11 (2009-10-30) #############################
+
+* CHANGE: Increased timeout on disconnect
+
+#### 0.8.10 (2009-10-07) #############################
+
+* CHANGE: Improved startup time. 
+
+#### 0.8.9 (2009-08-26) #############################
+
+* FIXED: authorize-local for Windows
+
+#### 0.8.8 (2009-08-25) #############################
+
+* FIXED: Rye::Box#guess_user_home for Windows SSH support
+* CHANGE: Renamed Rye::Box#cmd -> Rye::Box#__allow
+* ADDED: New whitelist commands: wget, curl, dir
+* ADDED: Rye::Box#file_write
+
+
+#### 0.8.7 (2009-08-11) #############################
+
+* FIXED: Rye::Box info level output is cleaner 
+* FIXED: file_upload / download now expanding local tildas when safemode is disabled
+* ADDED: Interactive handling for removing gems
+* ADDED: dir_upload and dir_download
 
 
 #### 0.8.6 (2009-08-04) #############################
@@ -277,3 +308,8 @@ Rye.shell and Rye::Box.run_command (SSH) commands.
 
 Initial public release
 
+
+#### TODO ###########################################
+
+* Re-implement Rye::Rap as an Observable StringIO object for dynamic printing of output. 
+* Fingerprints: ssh-keygen -l -f id_rsa_repos.pub

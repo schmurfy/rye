@@ -42,19 +42,21 @@ require 'esc'
 #++
 module Rye
   extend self
-
-  unless defined?(SYSINFO)
-    VERSION = "0.8.6".freeze
-    SYSINFO = SysInfo.new.freeze
-  end
   
+  VERSION = "0.8.12".freeze unless defined?(VERSION)
+  
+  @@sysinfo = nil
+  @@agent_env = Hash.new  # holds ssh-agent env vars
   @@mutex = Mutex.new     # for synchronizing threads
   
   # Accessor for an instance of SystemInfo
-  def Rye.sysinfo; SYSINFO; end
+  def Rye.sysinfo
+    @@sysinfo = SysInfo.new if @@sysinfo.nil?
+    @@sysinfo
+  end
   
   # Accessor for an instance of SystemInfo
-  def sysinfo; SYSINFO;  end
+  def sysinfo; Rye.sysinfo end
   
   class RyeError < RuntimeError; end
   class NoBoxes < RyeError; end
@@ -93,7 +95,7 @@ module Rye
   end
   
   # Looks for private keys in +path+ and returns and Array of paths
-  # to the files it fines. Raises an Exception if path does not exist.
+  # to the files it finds. Raises an Exception if path does not exist.
   # If path is a file rather than a directory, it will check whether
   # that single file is a private key.
   def find_private_keys(path)
@@ -126,8 +128,7 @@ module Rye
   end
   
   # Returns an Array of info about the currently available
-  # SSH keys, as provided by the SSH Agent. See
-  # Rye.start_sshagent_environment
+  # SSH keys, as provided by the SSH Agent.
   #
   # Returns: [[bits, finger-print, file-path], ...]
   #
@@ -184,6 +185,7 @@ module Rye
   # Returns the absolute path if found in PATH otherwise nil.
   def which(executable)
     return unless executable.is_a?(String)
+    return executable if Rye.sysinfo.os == :windows
     #return executable if File.exists?(executable) # SHOULD WORK, MUST TEST
     shortname = File.basename(executable)
     dir = Rye.sysinfo.paths.select do |path|    # dir contains all of the 
@@ -253,6 +255,8 @@ module Rye
      1.upto(len) { |i| str << chars[rand(chars.size-1)] }
      str
   end
+  
+  private 
   
   Rye.reload
 end
